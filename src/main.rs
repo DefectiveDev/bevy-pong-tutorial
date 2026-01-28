@@ -1,10 +1,28 @@
 use bevy::prelude::*;
+use bevy::math::bounding::{
+    Aabb2d,
+    BoundingVolume,
+    IntersectsVolume
+};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, (spawn_camera, spawn_ball))
-        .add_systems(FixedUpdate, project_poistions)
+        .add_systems(Startup, (
+                spawn_camera,
+                spawn_ball,
+                spawn_paddles
+                ))
+        .add_systems(FixedUpdate, (
+                // Add our `move_ball` system to run before
+                // we project our positions so we are not reading
+                // movement one frame behind
+                // using after instead allows system referencing without activation in a specific
+                // order
+                project_poistions,
+                move_ball.before(project_poistions),
+                handle_collisions.after(move_ball)
+                ))
         .run();
 }
 fn spawn_camera(mut commands: Commands) {
@@ -13,6 +31,25 @@ fn spawn_camera(mut commands: Commands) {
                 Camera2d,
                 Transform::from_xyz(0., 0., 0.)
                 ));
+}
+
+const PADDLE_SHAPE: Rectangle = Rectangle::new(20., 50.);
+const PADDLE_COLOR: Color = Color::srgb(0.,1.,0.);
+
+fn spawn_paddles(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let mesh = meshes.add(PADDLE_SHAPE);
+    let material = materials.add(PADDLE_COLOR);
+
+    commands.spawn((
+        Paddle,
+        Mesh2d(mesh),
+        MeshMaterial2d(material),
+        Position(Vec2::new(250., 0.))
+    ));
 }
 
 const BALL_SIZE: f32 = 20.;
@@ -47,10 +84,95 @@ fn project_poistions(mut positionables: Query<(&mut Transform, &Position)>) {
     }
 }
 
+fn move_ball (ball: Single<(&mut Position, &Velocity), With<Ball>>) {
+    let (mut position, velocity) = ball.into_inner();
+    position.0 += velocity.0 * BALL_SPEED;
+}
+
+fn collide_with_side(ball: Aabb2d, wall: Aabb2d) -> Option<Collision> {
+    if !ball.intersects(&wall) {
+        return None;
+    }
+
+    let closest_point = wall.closest_point(ball.center());
+    let offset = ball.center() - closest_point;
+
+    let side = if offset.x.abs() > offset.y.abs() {
+        if offset.x < 0. {
+            Collision::Left
+        } else {
+            Collision::Right
+        }
+    } else if offset.y > 0. {
+        Collision::Top
+    } else {
+        Collision::Bottom
+    };
+
+    Some(side)
+}
+
+fn handle_collisions(
+    ball: Single<(&mut Velocity, &Position, &Collider), With<Ball>>,
+    other_things: Query<(&Position, &Collider), Without<Ball>>
+) {
+    let (mut ball_velocity, ball_position, ball_collider) = ball.into_inner();
+
+    for (other_position, other_collider) in &other_things {
+        if let Some(collision) = collide_with_side(
+            Aabb2d::new(ball_position.0, ball_collider.half_size()),
+            Aabb2d::new(other_position.0, other_collider.half_size()),
+        ) {
+            match collision {
+                Collision::Left | Collision::Right => {
+                    ball_velocity.0.x *= -1.;
+                }
+                Collision::Top | Collision::Bottom => {
+                    ball_velocity.0.y *= -1.;
+                }
+            }
+        }
+    }
+}
+
+impl Collider {
+    fn half_size(&self) -> Vec2 {
+        self.0.half_size
+    }
+}
+
 #[derive(Component, Default)]
 #[require(Transform)]
 struct Position(Vec2);
 
+
+#[derive(Component, Default)]
+struct Velocity(Vec2);
+
+#[derive(Component, Default)]
+struct Collider(Rectangle);
+
+const BALL_SPEED: f32 = 2.;
+
 #[derive(Component)]
-#[require(Position)]
+#[require(
+    Position,
+    Velocity = Velocity(Vec2::new(-BALL_SPEED, BALL_SPEED)),
+    Collider = Collider(Rectangle::new(BALL_SIZE, BALL_SIZE))
+    )]
 struct Ball;
+
+#[derive(Component)]
+#[require(
+    Position,
+    Collider = Collider(PADDLE_SHAPE)
+    )]
+struct Paddle;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Collision {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
