@@ -4,7 +4,6 @@ use bevy::math::bounding::{
     BoundingVolume,
     IntersectsVolume
 };
-use bevy::render::view::window;
 
 fn main() {
     App::new()
@@ -13,6 +12,7 @@ fn main() {
             spawn_camera,
             spawn_ball,
             spawn_paddles,
+            spawn_gutters,
         ))
         // Add our `move_ball` system to run before
         // we project our positions so we are not reading
@@ -70,7 +70,7 @@ fn spawn_paddles(
     ));
 }
 
-const BALL_SIZE: f32 = 20.;
+const BALL_SIZE: f32 = 5.;
 const BALL_SHAPE: Circle = Circle::new(BALL_SIZE);
 const BALL_COLOR: Color = Color::srgb(1.,0.,0.);
 
@@ -91,6 +91,44 @@ fn spawn_ball(
     // `insert` they mean the same thing, letting us spawn many components on a
     // entity at once.
     commands.spawn((Ball, Mesh2d(mesh), MeshMaterial2d(material)));
+}
+
+const GUTTER_COLOR: Color = Color::srgb(0. ,0., 1.);
+const GUTTER_HEIGHT: f32 = 20.;
+
+fn spawn_gutters(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Single<&Window>
+) {
+    let material = materials.add(GUTTER_COLOR);
+    let padding = 20.;
+
+    let gutter_shape = Rectangle::new(window.resolution.width(), GUTTER_HEIGHT);
+    let mesh = meshes.add(gutter_shape);
+
+    let top_gutter_position = 
+        Vec2::new(0., window.resolution.height()/2. - padding);
+
+    commands.spawn((
+            Gutter,
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(material.clone()),
+            Position(top_gutter_position),
+            Collider(gutter_shape)
+    ));
+
+    let bottom_gutter_position = 
+        Vec2::new(0., -window.resolution.height() / 2. + padding);
+
+    commands.spawn((
+            Gutter,
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(material.clone()),
+            Position(bottom_gutter_position),
+            Collider(gutter_shape)
+    ));
 }
 
 fn project_poistions(mut positionables: Query<(&mut Transform, &Position)>) {
@@ -175,6 +213,10 @@ struct Player;
 
 #[derive(Component)]
 struct AI;
+
+#[derive(Component)]
+#[require(Position, Collider)]
+struct Gutter;
 
 const BALL_SPEED: f32 = 2.;
 
