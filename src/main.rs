@@ -8,6 +8,7 @@ use bevy::math::bounding::{
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .insert_resource(Score{ player: 0, ai: 0})
         .add_systems(Startup, (
             spawn_camera,
             spawn_ball,
@@ -23,6 +24,9 @@ fn main() {
             project_poistions,
             move_ball.before(project_poistions),
             handle_collisions.after(move_ball),
+            move_paddles.before(project_poistions),
+            handle_player_input.before(move_paddles),
+            constrain_paddle_position.after(move_paddles),
         ))
         .run();
 }
@@ -168,6 +172,21 @@ fn collide_with_side(ball: Aabb2d, wall: Aabb2d) -> Option<Collision> {
     Some(side)
 }
 
+const  PADDLE_SPEED: f32 = 5.;
+
+fn handle_player_input(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut paddle_velocity: Single<&mut Velocity, With<Player>>,
+) {
+    if keyboard_input.pressed(KeyCode::ArrowUp) {
+        paddle_velocity.0.y = PADDLE_SPEED;
+    } else if keyboard_input.pressed(KeyCode::ArrowDown) {
+        paddle_velocity.0.y = -PADDLE_SPEED;
+    } else {
+        paddle_velocity.0.y = 0.;
+    }
+}
+
 fn handle_collisions(
     ball: Single<(&mut Velocity, &Position, &Collider), With<Ball>>,
     other_things: Query<(&Position, &Collider), Without<Ball>>
@@ -185,6 +204,45 @@ fn handle_collisions(
                 }
                 Collision::Top | Collision::Bottom => {
                     ball_velocity.0.y *= -1.;
+                }
+            }
+        }
+    }
+}
+
+fn move_paddles(mut paddles: Query<(&mut Position, &Velocity), With<Paddle>>) {
+    for (mut position, velocity) in &mut paddles {
+        position.0 += velocity.0;
+    }
+}
+
+fn constrain_paddle_position(
+    mut paddles: Query<
+        (&mut Position, &Collider),
+        (With<Paddle>, Without<Gutter>),
+    >,
+    gutters: Query<(&Position, &Collider), (With<Gutter>, Without<Paddle>)>
+) {
+    for (mut paddle_position, paddle_collider) in &mut paddles {
+        for (gutter_position, gutter_collider) in &gutters {
+            let paddle_aabb = 
+                Aabb2d::new(paddle_position.0, paddle_collider.half_size());
+            let gutter_aabb = 
+                Aabb2d::new(gutter_position.0, gutter_collider.half_size());
+
+            if let Some(collision) = collide_with_side(paddle_aabb, gutter_aabb) {
+                match collision {
+                    Collision::Top => {
+                        paddle_position.0.y = gutter_position.0.y
+                            + gutter_collider.half_size().y
+                            + paddle_collider.half_size().y
+                    },
+                    Collision::Bottom => {
+                        paddle_position.0.y = gutter_position.0.y
+                            - gutter_collider.half_size().y
+                            - paddle_collider.half_size().y
+                    },
+                    _ => {}
                 }
             }
         }
@@ -231,9 +289,16 @@ struct Ball;
 #[derive(Component)]
 #[require(
     Position,
-    Collider = Collider(PADDLE_SHAPE)
-    )]
+    Collider = Collider(PADDLE_SHAPE),
+    Velocity
+)]
 struct Paddle;
+
+#[derive(Resource)]
+struct Score {
+    player: u32,
+    ai: u32,
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Collision {
