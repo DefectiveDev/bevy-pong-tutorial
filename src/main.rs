@@ -78,7 +78,7 @@ fn spawn_ball(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    ) {
+) {
     // `Assets::add` will load these into memory and return a `Handle` (an ID)
     // to these assets. When all references to this `Handle` are cleaned up
     // the asset is cleaned up.
