@@ -4,27 +4,29 @@ use bevy::math::bounding::{
     BoundingVolume,
     IntersectsVolume
 };
+use bevy::render::view::window;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, (
-                spawn_camera,
-                spawn_ball,
-                spawn_paddles
-                ))
+            spawn_camera,
+            spawn_ball,
+            spawn_paddles,
+        ))
+        // Add our `move_ball` system to run before
+        // we project our positions so we are not reading
+        // movement one frame behind
+        // using after instead allows system referencing without activation in a specific
+        // order
         .add_systems(FixedUpdate, (
-                // Add our `move_ball` system to run before
-                // we project our positions so we are not reading
-                // movement one frame behind
-                // using after instead allows system referencing without activation in a specific
-                // order
-                project_poistions,
-                move_ball.before(project_poistions),
-                handle_collisions.after(move_ball)
-                ))
+            project_poistions,
+            move_ball.before(project_poistions),
+            handle_collisions.after(move_ball),
+        ))
         .run();
 }
+
 fn spawn_camera(mut commands: Commands) {
     commands
         .spawn((
@@ -40,15 +42,31 @@ fn spawn_paddles(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Single<&Window>,
 ) {
     let mesh = meshes.add(PADDLE_SHAPE);
     let material = materials.add(PADDLE_COLOR);
+    let half_window_size = window.resolution.size() / 2.;
+    let padding = 20.;
+
+    let player_position = Vec2::new(-half_window_size.x + padding, 0.);
 
     commands.spawn((
+        Player,
         Paddle,
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-        Position(Vec2::new(250., 0.))
+        Mesh2d(mesh.clone()),
+        MeshMaterial2d(material.clone()),
+        Position(player_position)
+    ));
+
+    let ai_position = Vec2::new(half_window_size.x - padding, 0.);
+
+    commands.spawn((
+        AI,
+        Paddle,
+        Mesh2d(mesh.clone()),
+        MeshMaterial2d(material.clone()),
+        Position(ai_position)
     ));
 }
 
@@ -152,6 +170,12 @@ struct Velocity(Vec2);
 #[derive(Component, Default)]
 struct Collider(Rectangle);
 
+#[derive(Component)]
+struct Player;
+
+#[derive(Component)]
+struct AI;
+
 const BALL_SPEED: f32 = 2.;
 
 #[derive(Component)]
@@ -159,7 +183,7 @@ const BALL_SPEED: f32 = 2.;
     Position,
     Velocity = Velocity(Vec2::new(-BALL_SPEED, BALL_SPEED)),
     Collider = Collider(Rectangle::new(BALL_SIZE, BALL_SIZE))
-    )]
+)]
 struct Ball;
 
 #[derive(Component)]
