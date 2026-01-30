@@ -14,6 +14,7 @@ fn main() {
                 spawn_ball,
                 spawn_paddles,
                 spawn_gutters,
+                spawn_scoreboard,
         ))
         // Add our `move_ball` system to run before
         // we project our positions so we are not reading
@@ -28,6 +29,8 @@ fn main() {
                 handle_player_input.before(move_paddles),
                 constrain_paddle_position.after(move_paddles),
                 detect_goal.after(move_ball),
+                update_scoreboard,
+                move_ai,
         ))
         .add_observer(reset_ball)
         .add_observer(update_score)
@@ -313,8 +316,24 @@ fn spawn_scoreboard(mut commands: Commands) {
         ..default()
     };
 
+    // The players score on the left hand side
     let player_score = (
         PlayerScore,
+        Text::new("0"),
+        TextFont::from_font_size(72.0),
+        TextColor(Color::WHITE),
+        TextLayout::new_with_justify(Justify::Center),
+        Node {
+            position_type: PositionType::Absolute,
+            top: px(5.),
+            left: px(25.),
+            ..default()
+        },
+    );
+
+    // The AI score on the right hand side
+    let ai_score = (
+        AiScore,
         Text::new("0"),
         TextFont::from_font_size(72.0),
         TextColor(Color::WHITE),
@@ -328,14 +347,34 @@ fn spawn_scoreboard(mut commands: Commands) {
     );
 
     commands.spawn((
-        container,
-        children![(
-            header,
-            children![(
-
+            container,
+            children![( header,
+                children![
+                (player_score),
+                (ai_score)
+                ]
             )]
-        )]
     ));
+}
+
+fn update_scoreboard(
+    mut player_score: Single<&mut Text, (With<PlayerScore>, Without<AiScore>)>,
+    mut ai_score: Single<&mut Text, (With<AiScore>, Without<PlayerScore>)>,
+    score: Res<Score>,
+) {
+    if score.is_changed() {
+        player_score.0 = score.player.to_string();
+        ai_score.0 = score.ai.to_string();
+    };
+}
+
+fn move_ai(
+    ai: Single<(&mut Velocity, &Position), With<Ai>>,
+    ball: Single<&Position, With<Ball>>,
+) {
+    let (mut velocity, position) = ai.into_inner();
+    let a_to_b = ball.0 -position.0;
+    velocity.0.y = a_to_b.y.signum() * PADDLE_SPEED;
 }
 
 impl Collider {
@@ -376,7 +415,7 @@ const BALL_SPEED: f32 = 2.;
 #[derive(Component)]
 #[require(
     Position,
-    Velocity = Velocity(Vec2::new(-BALL_SPEED, 0.)),
+    Velocity = Velocity(Vec2::new(-BALL_SPEED, BALL_SPEED/10.)),
     Collider = Collider(Rectangle::new(BALL_SIZE, BALL_SIZE))
 )]
 struct Ball;
